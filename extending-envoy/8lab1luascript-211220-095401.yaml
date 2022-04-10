@@ -1,0 +1,55 @@
+static_resources:
+  listeners:
+  - name: main
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 10000
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          route_config:
+            name: some_route
+            virtual_hosts:
+            - name: some_service
+              domains:
+              - "*"
+              routes:
+              - match:
+                  prefix: "/"
+                direct_response:
+                  status: 200
+                  body:
+                    inline_string: "{\"res\": \"200 ok\"}"
+          http_filters:
+          - name: envoy.filters.http.lua
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua
+              inline_code: |
+                function envoy_on_request(request_handle)
+                    local request_headers = request_handle:headers()
+                    local log_output = "\n"
+                    for key, value in pairs(request_headers) do
+                        log_output = string.format("%s> %s: %s \n", log_output, key, value)
+                    end
+                    if request_handle:body() then
+                        log_output = log_output .. request_handle:body():getBytes(0, request_handle:body():length()) .. "\n"
+                    end
+                    request_handle:logInfo(log_output)
+                end
+
+                function envoy_on_response(response_handle)
+                    local response_headers = response_handle:headers()
+                    local log_output = "\n"
+                    for key, value in pairs(response_headers) do
+                        log_output = string.format("%s< %s: %s \n", log_output, key, value)
+                    end
+                    if response_handle:body() then
+                        log_output = log_output .. response_handle:body():getBytes(0, response_handle:body():length()) .. "\n"
+                    end
+                    response_handle:logInfo(log_output)
+                end
+          - name: envoy.filters.http.router
